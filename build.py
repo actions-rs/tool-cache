@@ -1,22 +1,48 @@
+#!/usr/bin/env python
+
 import os
 import os.path
-import sys
+import tempfile
 import logging
 import logging.config
 import subprocess
 
 import boto3
 import requests
+from dotenv import load_dotenv
 
-S3_REGION = 'us-east-2'
-S3_BUCKET = 'actions-rs.install.binary-cache'
+# Mostly for a local testing
+load_dotenv()
+
 S3_OBJECT_URL = 'https://s3.{region}.amazonaws.com/{bucket}/{{object_name}}'.format(
-    region=S3_REGION,
-    bucket=S3_BUCKET,
+    region=os.environ['AWS_S3_REGION'],
+    bucket=os.environ['AWS_S3_BUCKET'],
 )
 S3_OBJECT_NAME = '{crate}/{runner}/{crate}-{version}{ext}'
+CLOUDFRONT_URL = 'https://d1ad61wkrfbmp3.cloudfront.net/{filename}'
 
 MAX_VERSIONS_TO_BUILD = 1
+
+# Set of crates not to be built in any condition.
+EXCLUDES = {
+    # https://github.com/mozilla/grcov/issues/405
+    ('grcov', '0.5.10'),
+}
+
+
+def which(executable):
+    for path in os.environ['PATH'].split(os.pathsep):
+        path = path.strip('"')
+
+        fpath = os.path.join(path, executable)
+
+        if os.path.isfile(fpath) and os.access(fpath, os.X_OK):
+            return fpath
+
+    # checks if os is windows and appends .exe extension to
+    # `executable`, if not already present, and rechecks.
+    if os.name == 'nt' and not executable.endswith('.exe'):
+        return which('{}.exe'.format(executable))
 
 
 def crate_info(crate):
@@ -26,7 +52,16 @@ def crate_info(crate):
     resp = requests.get(url)
     resp.raise_for_status()
 
-    versions = filter(lambda v: not v['yanked'], resp.json()['versions'])
+    def predicate(v):
+        if v['yanked']:
+            return False
+
+        if (crate, v['num']) in EXCLUDES:
+            return False
+
+        return True
+
+    versions = filter(predicate, resp.json()['versions'])
     for version in list(versions)[:MAX_VERSIONS_TO_BUILD]:
         yield version['num']
 
@@ -42,7 +77,7 @@ def exists(runner, crate, version):
         version=version,
         ext=ext,
     )
-    url = S3_OBJECT_URL.format(object_name=object_name)
+    url = CLOUDFRONT_URL.format(filename=object_name)
     logging.info(
         'Check if {crate} == {version} for {runner} exists in S3 bucket at {url}'.format(
             crate=crate,
@@ -53,7 +88,7 @@ def exists(runner, crate, version):
     resp = requests.head(url, allow_redirects=True)
 
     if resp.ok:
-        logging.debug(
+        logging.info(
             '{crate} == {version} for {runner} already exists in S3 bucket'.format(
                 crate=crate,
                 version=version,
@@ -81,17 +116,58 @@ def build(runner, crate, version):
     logging.info('Preparing build root at {}'.format(root))
     os.makedirs(root, exist_ok=True)
 
-    args = 'cargo install --version {version} --root {root} --no-track {crate}'.format(
-        version=version,
-        root=root,
-        crate=crate,
-    )
-    subprocess.check_call(args, shell=True)
+    args = [
+        'cargo',
+        'install',
+        '--version',
+        version,
+        '--root',
+        root,
+        '--no-track',
+        crate,
+    ]
+    subprocess.check_call(args)
 
     return os.path.join(root, 'bin', os.listdir(os.path.join(root, 'bin'))[0])
 
 
-def upload(client, runner, crate, version, path):
+def sign(path):
+    openssl = which('openssl')
+    if openssl is None:
+        raise ValueError('Unable to find OpenSSL!')
+
+    signature_path = '{}.sig'.format(path)
+
+    cert_fd, cert_path = tempfile.mkstemp(prefix='cert_')
+    os.write(cert_fd, os.environ['SIGN_CERT'].encode())
+    os.close(cert_fd)
+
+    args = [
+        openssl,
+        'dgst',
+        '-sha256',
+        '-sign',
+        cert_path,
+        '-passin',
+        'env:SIGN_CERT_PASSPHRASE',
+        '-out',
+        signature_path,
+        path,
+    ]
+
+    try:
+        logging.info('Signing {} at {}'.format(path, signature_path))
+        subprocess.check_call(args)
+    finally:
+        os.unlink(cert_path)
+
+    if not os.path.exists(signature_path):
+        raise ValueError('Signature file is missing')
+
+    return signature_path
+
+
+def upload(client, runner, crate, version, path, signature_path):
     """Upload prebuilt `crate` with `version` for `runner` environment
     located at `path` to the S3 bucket."""
 
@@ -102,13 +178,15 @@ def upload(client, runner, crate, version, path):
         version=version,
         ext=ext,
     )
+    object_signature_name = '{}.sig'.format(object_name)
 
     logging.info('Uploading {path} to {bucket}/{name}'.format(
         path=path,
-        bucket=S3_BUCKET,
+        bucket=os.environ['AWS_S3_BUCKET'],
         name=object_name,
     ))
-    client.upload_file(path, S3_BUCKET, object_name)
+    client.upload_file(path, os.environ['AWS_S3_BUCKET'], object_name)
+    client.upload_file(signature_path, os.environ['AWS_S3_BUCKET'], object_signature_name)
 
 
 class LogFormatter(logging.Formatter):
@@ -152,7 +230,7 @@ if __name__ == '__main__':
 
     s3_client = boto3.client(
         's3',
-        region_name=S3_REGION,
+        region_name=os.environ['AWS_S3_REGION'],
         aws_access_key_id=os.environ['AWS_ACCESS_KEY_ID'],
         aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY']
     )
@@ -160,7 +238,14 @@ if __name__ == '__main__':
     logging.info('Building {} crate for {} environment'.format(crate, runner))
     for version in crate_info(crate):
         if not exists(runner, crate, version):
-            path = build(runner, crate, version)
-            logging.info('Built {} at {}'.format(crate, path))
+            try:
+                path = build(runner, crate, version)
+            except subprocess.CalledProcessError as e:
+                logging.warning(
+                    'Unable to build {} == {}: {}'.format(crate, version, e)
+                )
+            else:
+                logging.info('Built {} at {}'.format(crate, path))
 
-            upload(s3_client, runner, crate, version, path)
+                signature = sign(path)
+                upload(s3_client, runner, crate, version, path, signature)
