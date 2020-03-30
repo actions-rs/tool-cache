@@ -33,16 +33,16 @@ which uses this cache internally and explicitly enabling this functionality.
 ### Security measures
 
 1. Crates are compiled [right here at GitHub](https://github.com/actions-rs/tool-cache/actions?query=workflow%3A%22Build+tools+cache%22+event%3Aschedule)
-2. Crates are signed with 4096 bit RSA key;
-3. That RSA key is stored in the GitHub secrets
+2. Crates are signed with 4096 bit RSA key
+3. That RSA key is stored in the [GitHub secrets](https://help.github.com/en/actions/configuring-and-managing-workflows/creating-and-storing-encrypted-secrets)
 4. Actions at [@actions-rs](https://github.com/actions-rs) are validating
     this signature after the file downloading
 5. Compiled crates are stored in the AWS S3 bucket and served via AWS CloudFront
-6. AWS access key and any other confidential details for the crates uploading
-    are stored in the GitHub secrets too
-7. MFA is enabled for AWS root user
-8. Separate AWS user has the console access disabled
-    and only one permission: `PutObject` for this AWS S3 bucket.
+6. MFA is enabled for AWS root user
+7. Separate AWS user for files uploading has the console access disabled
+    and only one permission: `PutObject` for this S3 bucket
+8. AWS access key and other confidential details are stored in the
+    GitHub secrets
 
 Refer to the [@actions-rs/install](https://github.com/actions-rs/install)
 documentation to learn more about files downloading and validating.
