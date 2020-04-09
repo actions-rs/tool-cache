@@ -27,6 +27,7 @@ jobs:
           - cargo-tarpaulin
           - cargo-cache
           - cargo-web
+          - cargo-tree
 
           - cross
           - sccache
