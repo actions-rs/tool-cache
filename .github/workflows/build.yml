@@ -33,6 +33,7 @@ jobs:
           - sccache
           - mdbook
           - wasm-pack
+          - wasm-bindgen-cli
           - grcov
 
         exclude:
