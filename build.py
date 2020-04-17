@@ -6,6 +6,7 @@ import tempfile
 import logging
 import logging.config
 import subprocess
+import zipfile
 
 import boto3
 import requests
@@ -128,7 +129,17 @@ def build(runner, crate, version):
     ]
     subprocess.check_call(args)
 
-    return os.path.join(root, 'bin', os.listdir(os.path.join(root, 'bin'))[0])
+    archive_path = '{}.zip'.format(crate)
+    with zipfile.ZipFile(archive_path, 'w') as archive:
+        logging.info('Creating archive at {}'.format(archive_path))
+        for filename in os.listdir(os.path.join(root, 'bin')):
+            logging.info('Writing {} into {} archive'.format(filename, archive_path))
+            archive.write(
+                os.path.join(root, 'bin', filename),
+                filename,
+            )
+
+    return archive_path
 
 
 def sign(path):
