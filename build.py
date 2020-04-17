@@ -19,7 +19,7 @@ S3_OBJECT_URL = 'https://s3.{region}.amazonaws.com/{bucket}/{{object_name}}'.for
     region=os.environ['AWS_S3_REGION'],
     bucket=os.environ['AWS_S3_BUCKET'],
 )
-S3_OBJECT_NAME = '{crate}/{runner}/{crate}-{version}{ext}'
+S3_OBJECT_NAME = '{crate}/{runner}/{crate}-{version}.zip'
 CLOUDFRONT_URL = 'https://d1ad61wkrfbmp3.cloudfront.net/{filename}'
 
 MAX_VERSIONS_TO_BUILD = 3
@@ -71,12 +71,10 @@ def exists(runner, crate, version):
     """Check if `crate` with version `version` for `runner` environment
     already exists in the S3 bucket."""
 
-    ext = '.exe' if runner.lower().startswith('windows') else ''
     object_name = S3_OBJECT_NAME.format(
         crate=crate,
         runner=runner,
         version=version,
-        ext=ext,
     )
     url = CLOUDFRONT_URL.format(filename=object_name)
     logging.info(
@@ -182,12 +180,10 @@ def upload(client, runner, crate, version, path, signature_path):
     """Upload prebuilt `crate` with `version` for `runner` environment
     located at `path` to the S3 bucket."""
 
-    ext = '.exe' if runner.lower().startswith('windows') else ''
     object_name = S3_OBJECT_NAME.format(
         crate=crate,
         runner=runner,
         version=version,
-        ext=ext,
     )
     object_signature_name = '{}.sig'.format(object_name)
 
