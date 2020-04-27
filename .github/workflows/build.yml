@@ -28,6 +28,7 @@ jobs:
           - cargo-cache
           - cargo-web
           - cargo-tree
+          - cargo-binutils
 
           - cross
           - sccache
