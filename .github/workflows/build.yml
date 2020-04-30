@@ -29,6 +29,7 @@ jobs:
           - cargo-web
           - cargo-tree
           - cargo-binutils
+          - cargo-fuzz
 
           - cross
           - sccache
