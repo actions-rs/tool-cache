@@ -35,6 +35,7 @@ jobs:
           - cross
           - sccache
           - mdbook
+          - mdbook-epub
           - wasm-pack
           - wasm-bindgen-cli
           - grcov
