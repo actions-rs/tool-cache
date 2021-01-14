@@ -1,7 +1,11 @@
 # Binary crates cache
 
-This repository is responsible for building and persisting binary crates cache,
-which is used later by [actions-rs/install](https://github.com/actions-rs/install) Action.
+This repository was responsible for building and persisting binary crates cache,
+which were used later by [actions-rs/install](https://github.com/actions-rs/install) Action.
+
+**Deprecation warning**
+
+It is archived now and will not be updated anymore. [actions-rs/install](https://github.com/actions-rs/install) Action will be updated eventually to utilize GitHub runners cache to store compiled binaries.
 
 ## Cached crates
 
