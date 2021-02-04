@@ -30,7 +30,7 @@ and so on.
 
 Malicious parties potentially might replace these pre-built binaries,
 leading to the security breach.
-We try our best to mitigate any potential security problems, 
+We try our best to mitigate any potential security problems,
 but you must acknowledge that fact before using any @actions-rs Action,
 which uses this cache internally and explicitly enabling this functionality.
 
